@@ -12,14 +12,14 @@ from VAE.modules.decoders import BernoulliDecoder as Decoder
 from VAE.modules.encoders import GaussianEncoder as Encoder
 from VAE.modules.priors import GaussianPrior, MoGPrior, VampPrior
 from VAE.modules.VAE import VAE
-
+from VAE.modules.utils import evaluate #,plot_combined_prior_posterior
 
 def load_config(config_file):
     with open(config_file, 'r') as file:
         config = yaml.safe_load(file)
     return config
 
-def train(model, optimizer, data_loader, epochs, device):
+def train(model, optimizer, data_loader, epochs, device,save_path):
     """
     Train a VAE model.
 
@@ -34,6 +34,8 @@ def train(model, optimizer, data_loader, epochs, device):
         Number of epochs to train for.
     device: [torch.device]
         The device to use for training.
+    save_path: [str]
+        The path to save the trained model(s).
     """
     model.train()
 
@@ -53,28 +55,37 @@ def train(model, optimizer, data_loader, epochs, device):
             progress_bar.set_postfix(loss=f"⠀{loss.item():12.4f}", epoch=f"{epoch+1}/{epochs}")
             progress_bar.update()
 
-def test(model, data_loader, device):
-    """
-    Test a VAE model.
-
-    Parameters:
-    model: [VAE]
-        The VAE model to test.
-    data_loader: [torch.utils.data.DataLoader]
-        The data loader to use for testing.
-    device: [torch.device]
-        The device to use for testing.
-    """
-    model.eval()
-
+        # save, evaluate and sample the model every 5 epochs
+        if (epoch + 1) % 5 == 0:
+            torch.save(model.state_dict(), os.path.join(save_path, f"model_{epoch+1}.pth"))
+            # test the model
+            evaluation_elbo = evaluate(model, data_loader, device)
+            # write test loss to a csv file
+            csv_file = os.path.join(save_path, 'test_loss.csv')
+            with open(csv_file, 'a') as file:
+                file.write(f"Epoch {epoch+1}: ELBO: {evaluation_elbo:.4f}\n")
+            print(f"Epoch {epoch+1}: ELBO: {evaluation_elbo:.4f}")
+            # sample from the model
+            with torch.no_grad():
+                samples = (model.sample(64)).cpu() 
+                save_image(samples.view(64, 1, 28, 28), os.path.join(save_path, f'samples_{epoch+1}.png'), nrow=8)
+            # plot the prior and posterior
+            # add code here: 
+    
+    # save the final model
+    torch.save(model.state_dict(), os.path.join(save_path, "model_final.pth"))
+    # write final test loss to a csv file
+    test_loss = evaluate(model, data_loader, device)
+    csv_file = os.path.join(save_path, 'test_loss.csv')
+    with open(csv_file, 'a') as file:
+        file.write(f"Final: ELBO: {test_loss:.4f}\n")
+    print(f"Final: ELBO: {test_loss:.4f}")
+    # sample from the final model
     with torch.no_grad():
-        total_loss = 0
-        for x in data_loader:
-            x = x[0].to(device)
-            loss = model(x)
-            total_loss += loss.item()
-
-    return total_loss / len(data_loader)
+        samples = (model.sample(64)).cpu() 
+        save_image(samples.view(64, 1, 28, 28), os.path.join(save_path, 'samples_final.png'), nrow=8)
+    # plot the prior and posterior
+    # add code here:
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -145,33 +156,32 @@ if __name__ == '__main__':
     else:
         raise ValueError(f"Unknown prior type: {PRIOR_TYPE}")
 
-    model = VAE(prior, decoder, encoder).to(DEVICE)    
-    optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
-    train(model, optimizer, mnist_train_loader, EPOCHS, DEVICE)
     # create folder with timestamp and save model and config
     os.makedirs('VAE/trained_models', exist_ok=True)
     timestamp = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
     # add the prior type, latent dim and seed to the timestamp
     timestamp = f"{PRIOR_TYPE}_{M}_{SEED}_{timestamp}"
     folder = os.path.join('VAE/trained_models', timestamp)
-    os.makedirs(folder, exist_ok=True)
-    torch.save(model.state_dict(), os.path.join(folder, 'model.pth'))
+    os.makedirs(folder, exist_ok=True)    
     with open(os.path.join(folder, 'used_config.yaml'), 'w') as file:
         yaml.dump(config, file)
-    print(f"Model saved in {folder}")
+    model = VAE(prior, decoder, encoder).to(DEVICE)    
+    optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
+    train(model, optimizer, mnist_train_loader, EPOCHS, DEVICE,folder)
+    print(f"Training completed. Models saved in {folder}/model.pth")
 
-    model.eval()    
-    # Test model and sample from it
-    test_loss = test(model, mnist_test_loader, DEVICE)
-    print(f"Test loss: {test_loss:.4f}")
-    #  write test loss to a csv file
-    csv_file = os.path.join(folder, 'test_loss.csv')
-    with open(csv_file, 'w') as file:
-        file.write(f"Test loss: {test_loss:.4f}")
-    print(f"Test loss written to {csv_file}")
-    # Save samples
-    with torch.no_grad():
-        samples = (model.sample(64)).cpu() 
-        save_image(samples.view(64, 1, 28, 28), os.path.join(folder, 'samples.png'), nrow=8)
-    print(f"Samples saved in {folder}/samples.png")
+    # model.eval()    
+    # # Test model and sample from it
+    # test_loss = test(model, mnist_test_loader, DEVICE)
+    # print(f"Test loss: {test_loss:.4f}")
+    # #  write test loss to a csv file
+    # csv_file = os.path.join(folder, 'test_loss.csv')
+    # with open(csv_file, 'w') as file:
+    #     file.write(f"ELBO: {test_loss:.4f}")
+    # print(f"ELBO written to {csv_file}")
+    # # Save samples
+    # with torch.no_grad():
+    #     samples = (model.sample(64)).cpu() 
+    #     save_image(samples.view(64, 1, 28, 28), os.path.join(folder, 'samples.png'), nrow=8)
+    # print(f"Samples saved in {folder}/samples.png")
  
