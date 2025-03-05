@@ -2,45 +2,24 @@ import torch
 import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.decomposition import PCA
-def evaluate(model, data_loader, device):
+
+
+def plot_combined_prior_posterior(plot_name, prior, model, data_loader, device, grid_size=100, lim=5, n=5):
     """
-    Test a VAE model.
+    Plots the contour of the prior distribution and overlays the aggregated posterior samples.
 
     Parameters:
-    model: [VAE]
-        The VAE model to test.
-    data_loader: [torch.utils.data.DataLoader]
-        The data loader to use for testing.
-    device: [torch.device]
-        The device to use for testing.
-    """
-    model.eval()
-
-    with torch.no_grad():
-        elbo_total = 0
-        for x in data_loader:
-            x = x[0].to(device)
-            elbo = model.elbo(x)
-            elbo_total += elbo.item()
-
-    return elbo_total / len(data_loader)
-
-def plot_combined_prior_posterior(model,data_loader,device,save_path,grid_size=100,lim=20,n=30):         
-    """
-    Plot the prior and aggregated posterior samples in latent space.
-
-    Parameters:
-    - model: VAE instance
-    - data_loader: DataLoader instance
+    - prior: MixtureOfGaussiansPrior instance
+    - model: VAE model to evaluate
+    - data_loader: DataLoader providing input data
     - device: torch device ('cpu' or 'cuda')
-    - save_path: Path to save the plot
     - grid_size: Number of points per axis in the grid
     - lim: Limits for the plot in latent space
-    - n: Number of samples to skip in the aggregated posterior
-    """ 
-    prior = model.prior
-    model.eval()      
-       
+    """
+        
+    prior = prior.to(device)
+    model.eval()
+    
     # Generate 2D grid for contour plot
     x = np.linspace(-lim, lim, grid_size)
     y = np.linspace(-lim, lim, grid_size)
@@ -100,7 +79,7 @@ def plot_combined_prior_posterior(model,data_loader,device,save_path,grid_size=1
     ax.set_ylabel("Latent Dimension 2" if pca is None else "Principal Component 2")
     ax.set_title("Prior Contour with Aggregated Posterior Samples")
 
-    plt.savefig(save_path)
+    plt.savefig(plot_name)
     
 def plot_prior_contour(plot_name, prior, device, grid_size=100, lim=5):
     """

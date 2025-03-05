@@ -1,5 +1,9 @@
 import torch
 import torch.nn as nn
+import torch.distributions as td
+from VAE.modules.decoders import BernoulliDecoder
+from VAE.modules.decoders import GaussianDecoder
+from VAE.modules.priors import GaussianPrior, MoGPrior, VampPrior
 
 class VAE(nn.Module):
     """
@@ -32,20 +36,24 @@ class VAE(nn.Module):
            Number of samples to use for the Monte Carlo estimate of the ELBO.
         """
         q = self.encoder(x)
-        z = q.rsample()
+        z = q.rsample()       
+        
+        if isinstance(self.prior, GaussianPrior):
+            kl_div = td.kl_divergence(q, self.prior())
+            
+        elif isinstance(self.prior,MoGPrior) or isinstance(self.prior,VampPrior):
+            log_qz = q.log_prob(z)  # Log prob under q, posterior
+            log_pz = self.prior().log_prob(z)  # Log prob under MoG prior
+            kl_div = log_qz - log_pz  # Monte Carlo KL estimate
+    
+        if isinstance(self.decoder, BernoulliDecoder):
+            elbo = torch.mean(self.decoder(z).log_prob(x) - kl_div, dim=0)
 
-        # orginal code
-        #elbo = torch.mean(self.decoder(z).log_prob(x) - td.kl_divergence(q, self.prior()), dim=0) 
-        # my code that should work with MoG prior as well  
-        log_qz = q.log_prob(z)
-        log_pz = self.prior().log_prob(z)
-        # check the device of the tensors
-        #print(self.decoder(z).device)
-        #print(x.device)
-        log_px_z = self.decoder(z).log_prob(x)
-        kl_div = log_qz - log_pz
-        elbo = torch.mean(log_px_z -kl_div , dim = 0)
+        elif isinstance(self.decoder, GaussianDecoder):
+            elbo = torch.mean(self.decoder(z).log_prob(x).sum(dim=1) - kl_div, dim=0)              
+            
         return elbo
+
 
     def sample(self, n_samples=1):
         """
