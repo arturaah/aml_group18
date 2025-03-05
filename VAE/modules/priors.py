@@ -66,7 +66,7 @@ class MoGPrior(nn.Module):
         return td.MixtureSameFamily(mix, comp)
     
 class VampPrior(nn.Module):
-    def __init__(self, M, encoder, K=10, device='cpu'):
+    def __init__(self, M, encoder, K=10):
         """
         Define a VampPrior distribution with K pseudo-inputs.
 
@@ -82,7 +82,6 @@ class VampPrior(nn.Module):
         self.M = M
         self.encoder = encoder
         self.K = K
-        self.device = device
         # initialize the pseudo-input which are learnable
         # dimensions need to match the input dimensions of the encoder
         self.pseudo_inputs = nn.Parameter(torch.randn(self.K, 1, 28, 28), requires_grad=True)

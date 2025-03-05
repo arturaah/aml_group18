@@ -27,3 +27,13 @@ class BernoulliDecoder(nn.Module):
         """
         logits = self.decoder_net(z)
         return td.Independent(td.Bernoulli(logits=logits), 2)
+    
+class GaussianDecoder(nn.Module):
+    def __init__(self, decoder_net):
+        super(GaussianDecoder, self).__init__()
+        self.decoder_net = decoder_net
+
+    def forward(self, z):
+        mean = self.decoder_net(z)
+        std = torch.ones_like(mean) * 0.1  
+        return td.Independent(td.Normal(mean, std), 1)
