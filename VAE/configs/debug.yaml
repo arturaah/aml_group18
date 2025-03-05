@@ -1,0 +1,8 @@
+prior: "gaussian" # "mog","gaussian" or "vamp"
+binary_mnist: False # True or False
+device: "cuda" 
+batch_size: 64
+epochs: 1
+latent_dim: 10
+K: 10
+seed: 42
