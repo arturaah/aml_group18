@@ -1,114 +1,15 @@
 # Code for DTU course 02460 (Advanced Machine Learning Spring) by Jes Frellsen, 2024
 # Version 1.0 (2024-02-11)
-
 import torch
 import torch.nn as nn
 import torch.distributions as td
 import torch.nn.functional as F
 from tqdm import tqdm
-
-
-class DDPM(nn.Module):
-    def __init__(self, network, beta_1=1e-4, beta_T=2e-2, T=100):
-        """
-        Initialize a DDPM model.
-
-        Parameters:
-        network: [nn.Module]
-            The network to use for the diffusion process.
-        beta_1: [float]
-            The noise at the first step of the diffusion process.
-        beta_T: [float]
-            The noise at the last step of the diffusion process.
-        T: [int]
-            The number of steps in the diffusion process.
-        """
-        super(DDPM, self).__init__()
-        self.network = network
-        self.beta_1 = beta_1
-        self.beta_T = beta_T
-        self.T = T
-
-        self.beta = nn.Parameter(torch.linspace(beta_1, beta_T, T), requires_grad=False)
-        self.alpha = nn.Parameter(1 - self.beta, requires_grad=False)
-        self.alpha_cumprod = nn.Parameter(self.alpha.cumprod(dim=0), requires_grad=False)
-
-        self.mse = nn.MSELoss()
-    
-    def network_pass(self, x, t):
-        # pass x through the network but normalize t to be in range [0,1]
-        t = t / self.T
-        return self.network(x, t)
-
-    
-    def negative_elbo(self, x):
-        """
-        Evaluate the DDPM negative ELBO on a batch of data.
-
-        Parameters:
-        x: [torch.Tensor]
-            A batch of data (x) of dimension `(batch_size, *)`.
-        Returns:
-        [torch.Tensor]
-            The negative ELBO of the batch of dimension `(batch_size,)`.
-        """
-        ### Implement Algorithm 1 here ###
-        # should t be the same for all samples in the batch or not?
-        # currently it is different for each sample in the batch        
-        t = torch.randint(1, self.T+1, (x.shape[0], 1)).to(x.device) # sample t ~ U(1, T)        
-        noise = torch.randn(x.shape).to(x.device) #sample noise ~ N(0, 1)
-        # simplified loss function (eq 14) in the paper:
-        noisy_img = torch.sqrt(self.alpha_cumprod[t-1]) * x + torch.sqrt(1 - self.alpha_cumprod[t-1]) * noise
-        predicted_noise = self.network_pass(noisy_img, t)
-        neg_elbo = self.mse(noise,predicted_noise)
-        return neg_elbo     
-
-    def sample(self, shape):
-        """
-        Sample from the model.
-
-        Parameters:
-        shape: [tuple]
-            The shape of the samples to generate.
-        Returns:
-        [torch.Tensor]
-            The generated samples.
-        """
-        # Sample x_t for t=T (i.e., Gaussian noise)
-        x_t = torch.randn(shape).to(self.alpha.device)
-
-        # Sample x_t given x_{t+1} until x_0 is sampled
-        for t in range(self.T-1, -1, -1):
-            if t > 1:
-                z = torch.randn(shape).to(self.alpha.device)
-            else:
-                z = 0
-            # step 4 in Algorithm 2:
-            # make t a tensor of shape (batch_size, 1) to match the shape of x_t
-            t = torch.full((x_t.shape[0],1), t).to(x_t.device)
-
-            x_t = (1 / torch.sqrt(self.alpha[t])
-                    * (x_t - self.network_pass(x_t, t)* (1-self.alpha[t])/(torch.sqrt(1-self.alpha_cumprod[t]))
-                    + torch.sqrt(self.beta[t]) * z))     
-        return x_t
-
-    def loss(self, x):
-        """
-        Evaluate the DDPM loss on a batch of data.
-
-        Parameters:
-        x: [torch.Tensor]
-            A batch of data (x) of dimension `(batch_size, *)`.
-        Returns:
-        [torch.Tensor]
-            The loss for the batch.
-        """
-        return self.negative_elbo(x).mean()
-
+from DDPM.modules.DDPM import DDPM
 
 def train(model, optimizer, data_loader, epochs, device):
     """
-    Train a Flow model.
+    Train a model.
 
     Parameters:
     model: [Flow]
@@ -142,44 +43,10 @@ def train(model, optimizer, data_loader, epochs, device):
             progress_bar.set_postfix(loss=f"⠀{loss.item():12.4f}", epoch=f"{epoch+1}/{epochs}")
             progress_bar.update()
 
-
-class FcNetwork(nn.Module):
-    def __init__(self, input_dim, num_hidden):
-        """
-        Initialize a fully connected network for the DDPM, where the forward function also take time as an argument.
-        
-        parameters:
-        input_dim: [int]
-            The dimension of the input data.
-        num_hidden: [int]
-            The number of hidden units in the network.
-        """
-        super(FcNetwork, self).__init__()
-        self.network = nn.Sequential(nn.Linear(input_dim+1, num_hidden), nn.ReLU(), 
-                                     nn.Linear(num_hidden, num_hidden), nn.ReLU(), 
-                                     nn.Linear(num_hidden, num_hidden), nn.ReLU(), 
-                                     nn.Linear(num_hidden, num_hidden), nn.ReLU(), 
-                                     nn.Linear(num_hidden, input_dim))
-
-    def forward(self, x, t):
-        """"
-        Forward function for the network.
-        
-        parameters:
-        x: [torch.Tensor]
-            The input data of dimension `(batch_size, input_dim)`
-        t: [torch.Tensor]
-            The time steps to use for the forward pass of dimension `(batch_size, 1)`
-        """
-        x_t_cat = torch.cat([x, t], dim=1)
-        return self.network(x_t_cat)
-
-
 if __name__ == "__main__":
     import torch.utils.data
     from torchvision import datasets, transforms
     from torchvision.utils import save_image
-    import ToyData
 
     # Parse arguments
     import argparse
@@ -192,7 +59,7 @@ if __name__ == "__main__":
     parser.add_argument('--batch-size', type=int, default=64, metavar='N', help='batch size for training (default: %(default)s)')
     parser.add_argument('--epochs', type=int, default=1, metavar='N', help='number of epochs to train (default: %(default)s)')
     parser.add_argument('--lr', type=float, default=1e-3, metavar='V', help='learning rate for training (default: %(default)s)')
-    parser.add_argument('--network', type=str, default='fc', choices=['fc', 'unet'], help='network architecture to use (default: %(default)s)')
+    parser.add_argument('--network', type=str, default='unet', choices=['fc', 'unet'], help='network architecture to use (default: %(default)s)')
 
     args = parser.parse_args()
     print('# Options')
@@ -201,9 +68,10 @@ if __name__ == "__main__":
 
     # Generate the data
     if args.data == 'cb' or args.data == 'tg':
+        from FLOW.modules.ToyData import TwoGaussians, Chequerboard
 
         n_data = 10000000
-        toy = {'tg': ToyData.TwoGaussians, 'cb': ToyData.Chequerboard}[args.data]()
+        toy = {'tg': TwoGaussians, 'cb': Chequerboard}[args.data]()
         transform = lambda x: (x-0.5)*2.0
         train_loader = torch.utils.data.DataLoader(transform(toy().sample((n_data,))), batch_size=args.batch_size, shuffle=True)
         test_loader = torch.utils.data.DataLoader(transform(toy().sample((n_data,))), batch_size=args.batch_size, shuffle=True)
@@ -225,6 +93,7 @@ if __name__ == "__main__":
     #D = next(iter(train_loader)).shape[1]
 
     if args.network == 'fc':
+        from DDPM.modules.nn_architectures import FcNetwork
         if args.data=='mnist':
             D = 784
         else:
@@ -233,8 +102,8 @@ if __name__ == "__main__":
         num_hidden = 64
         network = FcNetwork(D, num_hidden)
     
-    elif args.network == 'unet':       
-        from unet import Unet
+    elif args.network == 'unet':  
+        from DDPM.modules.nn_architectures import Unet           
         network = Unet()
 
     # Set the number of steps in the diffusion process
@@ -285,8 +154,9 @@ if __name__ == "__main__":
 
         elif args.data == 'mnist':
             with torch.no_grad():
-                samples = (model.sample((100,784))).cpu()
-                samples = samples.view(100,1,28,28)
+                num_samples = 5
+                samples = (model.sample((num_samples,784))).cpu()
+                samples = samples.view(num_samples,1,28,28)
                 # transform the samples back to the original space
                 samples = samples /2 + 0.5
                 save_image(samples, args.samples, nrow=10)

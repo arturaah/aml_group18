@@ -1,5 +1,5 @@
 #!/bin/sh
-#BSUB -J train_VAE[20-25] # job name - 5 jobs will be created
+#BSUB -J train_VAE[1,2,3,4,5] # could also be doe as train_VAE[1-5]
 #BSUB -o VAE/batch_scripts/logs/Train%J_%I.out
 #BSUB -e VAE/batch_scripts/logs/Train%J_%I.err
 #BSUB -q gpuv100
@@ -16,4 +16,4 @@ module load cuda/11.8
 source ../venv/bin/activate # change to your virtual environment if needed
 
 # adjust the arguments as needed
-python train_VAE.py --config mog --seed $LSB_JOBINDEX
+python train_VAE.py --config gaus --seed $LSB_JOBINDEX

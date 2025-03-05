@@ -1,29 +1,5 @@
-# MIT License
-
-# Copyright (c) 2022 Muhammad Firmansyah Kasim
-
-# Permission is hereby granted, free of charge, to any person obtaining a copy
-# of this software and associated documentation files (the "Software"), to deal
-# in the Software without restriction, including without limitation the rights
-# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-# copies of the Software, and to permit persons to whom the Software is
-# furnished to do so, subject to the following conditions:
-
-# The above copyright notice and this permission notice shall be included in all
-# copies or substantial portions of the Software.
-
-# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-# SOFTWARE.
-
-# The following code is a modified version of the original code from the author. The original code can be found at
-# https://github.com/mfkasim1/score-based-tutorial/blob/main/03-SGM-with-SDE-MNIST.ipynb
-
 import torch
+import torch.nn as nn
 
 class Unet(torch.nn.Module):
     """
@@ -108,3 +84,34 @@ class Unet(torch.nn.Module):
                 signal = tconv(signal)
         signal = torch.reshape(signal, (*signal.shape[:-3], -1))  # (..., 1 * 28 * 28)
         return signal
+    
+class FcNetwork(nn.Module):
+    def __init__(self, input_dim, num_hidden):
+        """
+        Initialize a fully connected network for the DDPM, where the forward function also take time as an argument.
+        
+        parameters:
+        input_dim: [int]
+            The dimension of the input data.
+        num_hidden: [int]
+            The number of hidden units in the network.
+        """
+        super(FcNetwork, self).__init__()
+        self.network = nn.Sequential(nn.Linear(input_dim+1, num_hidden), nn.ReLU(), 
+                                     nn.Linear(num_hidden, num_hidden), nn.ReLU(), 
+                                     nn.Linear(num_hidden, num_hidden), nn.ReLU(), 
+                                     nn.Linear(num_hidden, num_hidden), nn.ReLU(), 
+                                     nn.Linear(num_hidden, input_dim))
+
+    def forward(self, x, t):
+        """"
+        Forward function for the network.
+        
+        parameters:
+        x: [torch.Tensor]
+            The input data of dimension `(batch_size, input_dim)`
+        t: [torch.Tensor]
+            The time steps to use for the forward pass of dimension `(batch_size, 1)`
+        """
+        x_t_cat = torch.cat([x, t], dim=1)
+        return self.network(x_t_cat)
