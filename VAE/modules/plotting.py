@@ -81,7 +81,7 @@ def plot_combined_prior_posterior(plot_name, prior, model, data_loader, device, 
 
     plt.savefig(plot_name)
     
-def plot_mog_prior_contour(plot_name, prior, device, grid_size=100, lim=5):
+def plot_prior_contour(plot_name, prior, device, grid_size=100, lim=5):
     """
     Plot the contour of a Mixture of Gaussians (MoG) prior.
     
