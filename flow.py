@@ -10,6 +10,7 @@ import torch.distributions as td
 from tqdm import tqdm
 import numpy as np
 import pdb
+from torch.nn.functional import softplus
 
 class GaussianBase(nn.Module):
     def __init__(self, D):
@@ -22,8 +23,8 @@ class GaussianBase(nn.Module):
         """
         super(GaussianBase, self).__init__()
         self.D = D
-        self.mean = nn.Parameter(torch.zeros(self.D), requires_grad=False)
-        self.std = nn.Parameter(torch.ones(self.D), requires_grad=False)
+        self.mean = nn.Parameter(torch.zeros(self.D), requires_grad=True)
+        self.std = nn.Parameter(torch.ones(self.D), requires_grad=True)
 
     def forward(self):
         """
@@ -32,7 +33,8 @@ class GaussianBase(nn.Module):
         Returns:
         prior: [torch.distributions.Distribution]
         """
-        return td.Independent(td.Normal(loc=self.mean, scale=self.std), 1)
+        positive_std = torch.nn.functional.softplus(self.std)
+        return td.Independent(td.Normal(loc=self.mean, scale=positive_std), 1)
 
 class MaskedCouplingLayer(nn.Module):
     """
@@ -82,9 +84,6 @@ class MaskedCouplingLayer(nn.Module):
         
         log_det_J = ((1 - self.mask) * scale).sum(dim=1)
         
-        ## From the lecture notes
-        # x = z
-        # log_det_J = torch.zeros(z.shape[0])
         return x, log_det_J
     
     def inverse(self, x):
@@ -111,9 +110,6 @@ class MaskedCouplingLayer(nn.Module):
         ## The log determinant is the negative of the forward - see eq. 4.10 i book (and then take log)
         log_det_J = -((1 - self.mask) * scale).sum(dim=1)
         
-        ## From lecture notes
-        # z = x
-        # log_det_J = torch.zeros(x.shape[0])
         return z, log_det_J
 
 
@@ -287,12 +283,6 @@ if __name__ == "__main__":
     for key, value in sorted(vars(args).items()):
         print(key, '=', value)
 
-    ##  Generate the data
-    # n_data = 10000000
-    # toy = {'tg': ToyData.TwoGaussians, 'cb': ToyData.Chequerboard}[args.data]()
-    # train_loader = torch.utils.data.DataLoader(toy().sample((n_data,)), batch_size=args.batch_size, shuffle=True)
-    #test_loader = torch.utils.data.DataLoader(toy().sample((n_data,)), batch_size=args.batch_size, shuffle=True)
-
 
     mnist_train_loader = torch.utils.data.DataLoader(datasets.MNIST('data/', train=True, download=True,
                                                                     transform=transforms.Compose([transforms.ToTensor(), 
@@ -301,18 +291,16 @@ if __name__ == "__main__":
                                                                             ])),
                                                     batch_size=args.batch_size, shuffle=True)
     
-    # ## Get a batch of images
-    # data_iter = iter(mnist_train_loader)
-    # images, labels = next(data_iter)  # Get a batch
-    # # Select the first image
-    # image = images[0]  # Shape: (784,)
-    # # Reshape back to (1, 28, 28) for save_image
-    # #pdb.set_trace()
-    # image = image.view(1, 28, 28)
-    # # Save the image using torchvision's save_image
-    # save_image(image, "mnist_example.png")
+    mnist_test_loader = torch.utils.data.DataLoader(datasets.MNIST('data/', train=True, download=True,
+                                                                    transform=transforms.Compose([transforms.ToTensor(), 
+                                                                            transforms.Lambda(lambda x: x+torch.rand(x.shape)/255),
+                                                                            transforms.Lambda(lambda x: x.flatten())
+                                                                            ])),
+                                                    batch_size=args.batch_size, shuffle=True)
+    
 
-    mask_strat = 'cheq'
+
+    mask_strat = 'random'
     
 
     # Define prior distribution
@@ -323,18 +311,27 @@ if __name__ == "__main__":
     # Define transformations
     transformations =[]
     
+    # num_transformations = 40
     num_transformations = 20
+    #num_transformations = 10
+
     num_hidden = 10
+    #num_hidden = 32
     
-    mask = masking_strategy('cheq',D)
+    mask = masking_strategy(mask_strat,D)
     
     for i in range(num_transformations):
         if mask_strat == 'vanilla' or mask_strat =='cheq':
             mask = (1-mask) # Flip the mask
         else:
             mask = masking_strategy(mask_strat,D)
-        scale_net = nn.Sequential(nn.Linear(D, num_hidden), nn.ReLU(), nn.Linear(num_hidden, D), nn.Tanh())
-        translation_net = nn.Sequential(nn.Linear(D, num_hidden), nn.ReLU(), nn.Linear(num_hidden, D))
+        scale_net = nn.Sequential(nn.Linear(D, num_hidden), 
+                                  nn.ReLU(), 
+                                  nn.Linear(num_hidden, D), 
+                                  nn.Tanh())
+        translation_net = nn.Sequential(nn.Linear(D, num_hidden), 
+                                        nn.ReLU(), 
+                                        nn.Linear(num_hidden, D))
         transformations.append(MaskedCouplingLayer(scale_net, translation_net, mask))
 
     # Define flow model
@@ -374,18 +371,3 @@ if __name__ == "__main__":
         # Save the samples as a PNG image
         save_image(samples, args.samples, nrow=10, normalize=True)
 
-    
-
-        # # Plot the density of the toy data and the model samples
-        # coordinates = [[[x,y] for x in np.linspace(*toy.xlim, 1000)] for y in np.linspace(*toy.ylim, 1000)]
-        # prob = torch.exp(toy().log_prob(torch.tensor(coordinates)))
-
-        # fig, ax = plt.subplots(1, 1, figsize=(7, 5))
-        # im = ax.imshow(prob, extent=[toy.xlim[0], toy.xlim[1], toy.ylim[0], toy.ylim[1]], origin='lower', cmap='YlOrRd')
-        # ax.scatter(samples[:, 0], samples[:, 1], s=1, c='black', alpha=0.5)
-        # ax.set_xlim(toy.xlim)
-        # ax.set_ylim(toy.ylim)
-        # ax.set_aspect('equal')
-        # fig.colorbar(im)
-        # plt.savefig(args.samples)
-        # plt.close()
