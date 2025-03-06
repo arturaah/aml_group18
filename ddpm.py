@@ -43,6 +43,11 @@ def train(model, optimizer, data_loader, epochs, device):
             progress_bar.set_postfix(loss=f"⠀{loss.item():12.4f}", epoch=f"{epoch+1}/{epochs}")
             progress_bar.update()
 
+        if (epoch + 1) % 5 == 0:
+            # Save model
+            torch.save(model.state_dict(), f'ddpm_model_{epoch+1}.pt')
+    
+
 if __name__ == "__main__":
     import torch.utils.data
     from torchvision import datasets, transforms
@@ -54,10 +59,10 @@ if __name__ == "__main__":
     parser.add_argument('--mode', type=str, default='train', choices=['train', 'sample', 'test'], help='what to do when running the script (default: %(default)s)')
     parser.add_argument('--data', type=str, default='mnist', choices=['tg', 'cb', 'mnist'], help='dataset to use {tg: two Gaussians, cb: chequerboard} (default: %(default)s)')
     parser.add_argument('--model', type=str, default='model.pt', help='file to save model to or load model from (default: %(default)s)')
-    parser.add_argument('--samples', type=str, default='samples.png', help='file to save samples in (default: %(default)s)')
-    parser.add_argument('--device', type=str, default='cpu', choices=['cpu', 'cuda', 'mps'], help='torch device (default: %(default)s)')
+    #parser.add_argument('--samples', type=str, default='samples.png', help='file to save samples in (default: %(default)s)')
+    #parser.add_argument('--device', type=str, default='cuda', choices=['cpu', 'cuda', 'mps'], help='torch device (default: %(default)s)')
     parser.add_argument('--batch-size', type=int, default=64, metavar='N', help='batch size for training (default: %(default)s)')
-    parser.add_argument('--epochs', type=int, default=1, metavar='N', help='number of epochs to train (default: %(default)s)')
+    parser.add_argument('--epochs', type=int, default=4, metavar='N', help='number of epochs to train (default: %(default)s)')
     parser.add_argument('--lr', type=float, default=1e-3, metavar='V', help='learning rate for training (default: %(default)s)')
     parser.add_argument('--network', type=str, default='unet', choices=['fc', 'unet'], help='network architecture to use (default: %(default)s)')
 
@@ -109,8 +114,8 @@ if __name__ == "__main__":
     # Set the number of steps in the diffusion process
     T = 1000
 
-    # Define model
-    model = DDPM(network, T=T).to(args.device)
+    DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")  
+    model = DDPM(network, T=T).to(DEVICE)
 
     # Choose mode to run
     if args.mode == 'train':
@@ -118,7 +123,7 @@ if __name__ == "__main__":
         optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
 
         # Train model
-        train(model, optimizer, train_loader, args.epochs, args.device)
+        train(model, optimizer, train_loader, args.epochs, DEVICE)
 
         # Save model
         torch.save(model.state_dict(), args.model)    
@@ -128,7 +133,7 @@ if __name__ == "__main__":
         import numpy as np
 
         # Load the model
-        model.load_state_dict(torch.load(args.model, map_location=torch.device(args.device)))
+        model.load_state_dict(torch.load(args.model, map_location=torch.device(DEVICE)))
 
         # Generate samples
         model.eval()
@@ -149,15 +154,15 @@ if __name__ == "__main__":
             ax.set_ylim(toy.ylim)
             ax.set_aspect('equal')
             fig.colorbar(im)
-            plt.savefig(args.samples)
+            plt.savefig(f"{args.model}_samples.png")
             plt.close()
 
         elif args.data == 'mnist':
             with torch.no_grad():
-                num_samples = 5
+                num_samples = 100
                 samples = (model.sample((num_samples,784))).cpu()
                 samples = samples.view(num_samples,1,28,28)
                 # transform the samples back to the original space
                 samples = samples /2 + 0.5
-                save_image(samples, args.samples, nrow=10)
+                save_image(samples, f"{args.model}_samples.png", nrow=10)
 
